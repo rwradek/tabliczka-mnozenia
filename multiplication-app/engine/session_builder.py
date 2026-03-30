@@ -78,6 +78,7 @@ def _build_groups_queue(scheduler: dict) -> list[str]:
     idx = scheduler.get("current_group_idx", 0)
     group_name = INTRODUCTION_ORDER[idx]
     cards = [f"{a}x{b}" for a, b in RAW_GROUPS[group_name]]
+    random.shuffle(cards)
     clean = scheduler.get("consecutive_clean", 0)
 
     remaining_groups = INTRODUCTION_ORDER[idx + 1:]
@@ -147,8 +148,10 @@ def _build_leitner_queue(leitner_data: dict, scheduler: dict) -> list[str]:
     # Repeat same batch while consecutive_clean < 2
     current_batch = scheduler.get("current_batch")
     if current_batch:
-        logger.info("[Faza 2] Powtarzam partię (nie osiągnięto 2 czystych): %s", current_batch)
-        return list(current_batch)
+        shuffled = list(current_batch)
+        random.shuffle(shuffled)
+        logger.info("[Faza 2] Powtarzam partię (nie osiągnięto 2 czystych): %s", shuffled)
+        return shuffled
 
     batch = _pick_new_batch(leitner_data, scheduler)
     scheduler["current_batch"] = batch

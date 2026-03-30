@@ -15,13 +15,12 @@ document.querySelectorAll(".tab").forEach(tab => {
 let statsData = null;
 
 async function loadStats() {
-  const res  = await fetch("/parent/stats");
+  const res = await fetch("/parent/stats");
   statsData  = await res.json();
 
   renderGrid(statsData.grid);
-  renderBoxes(statsData.box_counts, statsData.box_next);
+  renderBoxes(statsData.box_cards, statsData.phase_info);
   renderHistory(statsData.completed_sessions, statsData.difficult_facts);
-  renderSuggestion(statsData.suggested_group, statsData.groups);
 }
 
 // ── TAB 1: Grid ───────────────────────────────────────────────────────────
@@ -44,7 +43,6 @@ function renderGrid(grid) {
 
   // Rows (a = 2 … 9)
   for (let a = 2; a <= 9; a++) {
-    // Row header
     const rh = document.createElement("div");
     rh.className = "grid-header";
     rh.textContent = a + "×";
@@ -57,12 +55,7 @@ function renderGrid(grid) {
       const box  = info ? info.box : 0;
 
       cell.className = "grid-cell";
-      if (!info || !info.active) {
-        cell.classList.add("box-0");
-      } else {
-        cell.classList.add(`box-${Math.max(box, 0)}`);
-      }
-
+      cell.classList.add(`box-${Math.max(box, 0)}`);
       cell.innerHTML = `<span class="cell-fact">${a}×${b}</span>
                         <span class="cell-box">${box > 0 ? "B" + box : "—"}</span>`;
       cell.title = `${a}×${b}=${a * b}  [Box ${box}]`;
@@ -72,30 +65,60 @@ function renderGrid(grid) {
 }
 
 // ── TAB 2: Boxes ──────────────────────────────────────────────────────────
-const BOX_INTERVALS = { 1: "1 dzień", 2: "2 dni", 3: "4 dni", 4: "8 dni", 5: "16 dni" };
-const BOX_COLORS    = { 0: "#bdc3c7", 1: "#e74c3c", 2: "#e67e22", 3: "#f1c40f", 4: "#2ecc71", 5: "#27ae60" };
+const BOX_COLORS = {
+  0: "#bdc3c7", 1: "#e74c3c", 2: "#e67e22",
+  3: "#f1c40f", 4: "#2ecc71", 5: "#27ae60"
+};
 
-function renderBoxes(counts, nextDates) {
-  const wrap    = document.getElementById("boxes-wrap");
-  const totalActive = [1,2,3,4,5].reduce((s, i) => s + (counts[String(i)] || 0), 0);
+function renderBoxes(boxCards, phaseInfo) {
+  const wrap  = document.getElementById("boxes-wrap");
+  const label = document.getElementById("phase-info-label");
   wrap.innerHTML = "";
 
-  for (let i = 1; i <= 5; i++) {
-    const cnt  = counts[String(i)] || 0;
-    const pct  = totalActive > 0 ? Math.round(cnt / totalActive * 100) : 0;
-    const next = nextDates[String(i)];
+  if (phaseInfo) {
+    if (phaseInfo.phase === "groups") {
+      const grp = phaseInfo.current_group || "—";
+      label.textContent =
+        `Faza 1 – nauka grup | Aktualna grupa: ${grp} | `+
+        `Czyste sesje: ${phaseInfo.consecutive_clean}/2 | `+
+        `Postęp: ${phaseInfo.progress}`;
+    } else {
+      label.textContent =
+        `Faza 2 – Leitner | Aktualny box: ${phaseInfo.current_box} | `+
+        `Czyste serie: ${phaseInfo.consecutive_clean}/2`;
+    }
+  }
 
-    const card = document.createElement("div");
-    card.className = "box-card";
-    card.style.borderTop = `4px solid ${BOX_COLORS[i]}`;
-    card.innerHTML = `
-      <div class="box-num" style="color:${BOX_COLORS[i]}">Box ${i}</div>
-      <div class="box-count">${cnt} kart</div>
-      <div class="box-interval">Powtórka co: ${BOX_INTERVALS[i]}</div>
-      ${next ? `<div class="box-interval">Następna: ${next}</div>` : ""}
-      <div class="box-bar"><div class="box-bar-fill" style="width:${pct}%;background:${BOX_COLORS[i]}"></div></div>
-    `;
-    wrap.appendChild(card);
+  for (let i = 1; i <= 5; i++) {
+    const cards = (boxCards && boxCards[String(i)]) || [];
+    const section = document.createElement("div");
+    section.className = "box-section";
+
+    const header = document.createElement("div");
+    header.className = "box-section-header";
+    header.innerHTML =
+      `<span class="box-title" style="color:${BOX_COLORS[i]}">Box ${i}</span>` +
+      `<span class="box-meta">${cards.length} kart</span>`;
+    section.appendChild(header);
+
+    if (cards.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "box-empty";
+      empty.textContent = "brak kart";
+      section.appendChild(empty);
+    } else {
+      const list = document.createElement("div");
+      list.className = "box-card-list";
+      for (const c of cards) {
+        const chip = document.createElement("span");
+        chip.className = "fact-chip";
+        chip.textContent = `${c.a}×${c.b}`;
+        chip.title = `${c.a}×${c.b}=${c.result}`;
+        list.appendChild(chip);
+      }
+      section.appendChild(list);
+    }
+    wrap.appendChild(section);
   }
 }
 
@@ -143,7 +166,6 @@ function renderChart(sessions) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Background
   ctx.fillStyle = "#fff";
   ctx.roundRect(0, 0, W, H, 14);
   ctx.fill();
@@ -157,28 +179,25 @@ function renderChart(sessions) {
     return;
   }
 
-  const PAD = { top: 20, bottom: 30, left: 36, right: 16 };
+  const PAD  = { top: 20, bottom: 30, left: 36, right: 16 };
   const cW   = W - PAD.left - PAD.right;
   const cH   = H - PAD.top  - PAD.bottom;
   const step = cW / (last14.length - 1);
 
-  // Grid lines
   ctx.strokeStyle = "#e0e6f0";
   ctx.lineWidth   = 1;
-  for (let pct of [0, 25, 50, 75, 100]) {
+  for (const pct of [0, 25, 50, 75, 100]) {
     const y = PAD.top + cH - (pct / 100) * cH;
     ctx.beginPath();
     ctx.moveTo(PAD.left, y);
     ctx.lineTo(W - PAD.right, y);
     ctx.stroke();
-
     ctx.fillStyle  = "#7f8c8d";
     ctx.font       = "11px sans-serif";
     ctx.textAlign  = "right";
     ctx.fillText(pct + "%", PAD.left - 4, y + 4);
   }
 
-  // Line
   const points = last14.map((s, i) => [
     PAD.left + i * step,
     PAD.top + cH - ((s.accuracy || 0) / 100) * cH,
@@ -189,17 +208,12 @@ function renderChart(sessions) {
   for (let i = 1; i < points.length; i++) {
     const [px, py] = points[i - 1];
     const [cx, cy] = points[i];
-    ctx.bezierCurveTo(
-      px + step / 2, py,
-      cx - step / 2, cy,
-      cx, cy
-    );
+    ctx.bezierCurveTo(px + step / 2, py, cx - step / 2, cy, cx, cy);
   }
   ctx.strokeStyle = "#5b8dee";
   ctx.lineWidth   = 2.5;
   ctx.stroke();
 
-  // Fill under line
   ctx.lineTo(points[points.length - 1][0], PAD.top + cH);
   ctx.lineTo(points[0][0], PAD.top + cH);
   ctx.closePath();
@@ -209,7 +223,6 @@ function renderChart(sessions) {
   ctx.fillStyle = grad;
   ctx.fill();
 
-  // Dots
   ctx.fillStyle = "#5b8dee";
   for (const [x, y] of points) {
     ctx.beginPath();
@@ -217,14 +230,13 @@ function renderChart(sessions) {
     ctx.fill();
   }
 
-  // X-axis labels (every other, abbreviated date)
   ctx.fillStyle  = "#7f8c8d";
   ctx.font       = "10px sans-serif";
   ctx.textAlign  = "center";
   last14.forEach((s, i) => {
     if (i % 2 !== 0) return;
     const x    = PAD.left + i * step;
-    const date = (s.completed_at || "").substring(5, 10); // MM-DD
+    const date = (s.completed_at || "").substring(5, 10);
     ctx.fillText(date, x, H - PAD.bottom + 14);
   });
 }
@@ -233,93 +245,20 @@ function renderChart(sessions) {
 async function loadSettings() {
   const res  = await fetch("/parent/settings");
   const data = await res.json();
-
   const form = document.getElementById("settings-form");
-  form.querySelector(`[name="session_length_min"]`).value    = data.session_length_min;
-  form.querySelector(`[name="session_hard_limit_min"]`).value = data.session_hard_limit_min;
-  form.querySelector(`[name="new_cards_per_session"]`).value = data.new_cards_per_session;
-  form.querySelector(`[name="autosave_every_n"]`).value      = data.autosave_every_n;
-  form.querySelector(`[name="mastery_threshold_ms"]`).value  = data.mastery_threshold_ms;
-
   const modeRadio = form.querySelector(`[name="answer_mode"][value="${data.answer_mode}"]`);
   if (modeRadio) modeRadio.checked = true;
 }
 
 document.getElementById("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const form = e.target;
-  const fd   = new FormData(form);
-
-  const body = {
-    answer_mode:           fd.get("answer_mode"),
-    session_length_min:    Number(fd.get("session_length_min")),
-    session_hard_limit_min: Number(fd.get("session_hard_limit_min")),
-    new_cards_per_session: Number(fd.get("new_cards_per_session")),
-    autosave_every_n:      Number(fd.get("autosave_every_n")),
-    mastery_threshold_ms:  Number(fd.get("mastery_threshold_ms")),
-  };
-
+  const fd = new FormData(e.target);
   await fetch("/parent/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ answer_mode: fd.get("answer_mode") }),
   });
-
   alert("Zapisano ustawienia.");
-});
-
-// ── Suggestion ────────────────────────────────────────────────────────────
-let suggestedGroupId = null;
-
-function renderSuggestion(suggestion, groups) {
-  const textEl = document.getElementById("suggestion-text");
-  const select = document.getElementById("group-override");
-
-  // Populate override dropdown with pending groups
-  select.innerHTML = '<option value="">— zmień grupę —</option>';
-  for (const [gid, info] of Object.entries(groups)) {
-    if (info.status === "pending") {
-      const opt = document.createElement("option");
-      opt.value       = gid;
-      opt.textContent = gid;
-      select.appendChild(opt);
-    }
-  }
-
-  if (suggestion) {
-    suggestedGroupId = suggestion.group;
-    const reasonMap = {
-      ready:      "Wszystkie aktywne grupy osiągnęły Box 3",
-      regression: "Niektóre karty cofnęły się do Box 1",
-      stagnation: "Brak postępu przez 5+ dni",
-    };
-    textEl.textContent =
-      `Następna proponowana grupa: ${suggestion.group} — ${reasonMap[suggestion.reason] || suggestion.reason}`;
-  } else {
-    suggestedGroupId = null;
-    textEl.textContent = "Brak sugestii – kontynuuj aktywne grupy.";
-  }
-}
-
-document.getElementById("btn-approve").addEventListener("click", async () => {
-  if (!suggestedGroupId) return;
-  await fetch("/parent/override-group", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ group_id: suggestedGroupId }),
-  });
-  loadStats();
-});
-
-document.getElementById("btn-override").addEventListener("click", async () => {
-  const sel = document.getElementById("group-override");
-  if (!sel.value) return;
-  await fetch("/parent/override-group", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ group_id: sel.value }),
-  });
-  loadStats();
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────
