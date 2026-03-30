@@ -57,6 +57,16 @@ def build_session_queue(leitner_data, facts, groups, active_group_ids, settings)
                 if fid not in added:
                     queue.append(fid)
                     added.add(fid)
+        if not queue:
+            # Bonus session: no restrictions — review ALL active cards
+            # (spec: no limit on daily session count)
+            all_active = [
+                fid for fid, card in leitner_data.items()
+                if card["active"] and card["box"] > 0
+            ]
+            import random as _rnd
+            _rnd.shuffle(all_active)
+            queue = all_active
         return queue
 
     # 4. Build Incremental Rehearsal pattern

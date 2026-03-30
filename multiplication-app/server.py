@@ -219,6 +219,7 @@ def child_session_status():
             "active": True,
             "questions_done": s["current_idx"],
             "questions_total": len(s["queue"]),
+            "correct_count": s["correct_count"],
             "time_elapsed_s": int(time.time() - s["start_time"]),
             "done": s.get("done", False),
             "correct_streak": s.get("correct_streak", 0),

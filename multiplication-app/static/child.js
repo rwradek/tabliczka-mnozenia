@@ -151,12 +151,17 @@ async function showDone() {
   const res  = await fetch("/child/session-status");
   const data = await res.json();
 
-  const done    = data.questions_done  || 0;
-  const correct = data.correct_count   || 0;
+  const done    = data.questions_done || 0;
+  const correct = data.correct_count  || 0;   // may be 0 if not tracked
   const pct     = done > 0 ? Math.round(correct / done * 100) : 0;
 
-  doneEmoji.textContent     = pct >= 80 ? "🏆" : pct >= 60 ? "👍" : "💪";
-  doneSats.textContent      = `${done} pytań · ${pct}% trafnych`;
+  if (done === 0) {
+    doneEmoji.textContent = "😴";
+    doneSats.textContent  = "Brak kart do powtórki — wróć jutro lub poproś rodzica o nową grupę.";
+  } else {
+    doneEmoji.textContent = pct >= 80 ? "🏆" : pct >= 60 ? "👍" : "💪";
+    doneSats.textContent  = `${done} pytań · ${pct > 0 ? pct + "% trafnych" : "ukończono"}`;
+  }
   showScreen("screen-done");
 }
 
