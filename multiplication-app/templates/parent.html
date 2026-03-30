@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Panel rodzica – Tabliczka mnożenia</title>
+  <link rel="stylesheet" href="/static/parent.css" />
+</head>
+<body>
+
+  <header>
+    <h1>Panel rodzica</h1>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="grid"    role="tab">Siatka</button>
+      <button class="tab"        data-tab="boxes"   role="tab">Pudełka</button>
+      <button class="tab"        data-tab="history" role="tab">Historia</button>
+      <button class="tab"        data-tab="config"  role="tab">Ustawienia</button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ── TAB 1: Progress grid ── -->
+    <section id="tab-grid" class="tab-content active">
+      <h2>Siatka postępu (×2–×9)</h2>
+      <div class="legend">
+        <span class="box-0">□ nieaktywna</span>
+        <span class="box-1">● box 1</span>
+        <span class="box-2">● box 2</span>
+        <span class="box-3">● box 3</span>
+        <span class="box-4">● box 4</span>
+        <span class="box-5">● box 5</span>
+      </div>
+      <div id="grid-wrap">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- ── TAB 2: Leitner boxes ── -->
+    <section id="tab-boxes" class="tab-content">
+      <h2>Pudełka Leitnera</h2>
+      <div id="boxes-wrap" class="boxes-row">
+        <!-- Populated by JS -->
+      </div>
+    </section>
+
+    <!-- ── TAB 3: History ── -->
+    <section id="tab-history" class="tab-content">
+      <h2>Historia sesji</h2>
+
+      <canvas id="accuracy-chart" width="680" height="180"></canvas>
+
+      <h3>Ostatnie sesje</h3>
+      <table id="sessions-table">
+        <thead>
+          <tr>
+            <th>Data</th>
+            <th>Pytania</th>
+            <th>Trafność</th>
+            <th>Śr. czas</th>
+          </tr>
+        </thead>
+        <tbody id="sessions-body"></tbody>
+      </table>
+
+      <h3>Najtrudniejsze fakty</h3>
+      <ul id="difficult-list"></ul>
+    </section>
+
+    <!-- ── TAB 4: Settings ── -->
+    <section id="tab-config" class="tab-content">
+      <h2>Konfiguracja</h2>
+
+      <form id="settings-form" class="settings-grid">
+
+        <label>Tryb odpowiedzi</label>
+        <div class="radio-group">
+          <label><input type="radio" name="answer_mode" value="keyboard" /> Klawiatura</label>
+          <label><input type="radio" name="answer_mode" value="tiles"    /> Kafelki</label>
+        </div>
+
+        <label for="cfg-session-len">Długość sesji (min)</label>
+        <input id="cfg-session-len" name="session_length_min" type="number" min="5" max="30" />
+
+        <label for="cfg-hard-limit">Twardy limit (min)</label>
+        <input id="cfg-hard-limit" name="session_hard_limit_min" type="number" min="10" max="60" />
+
+        <label for="cfg-new-cards">Nowe karty / sesja</label>
+        <input id="cfg-new-cards" name="new_cards_per_session" type="number" min="1" max="5" />
+
+        <label for="cfg-autosave">Autosave co N odpowiedzi</label>
+        <input id="cfg-autosave" name="autosave_every_n" type="number" min="1" max="20" />
+
+        <label for="cfg-mastery">Próg opanowania (ms)</label>
+        <input id="cfg-mastery" name="mastery_threshold_ms" type="number" min="1000" max="8000" step="100" />
+
+        <div></div>
+        <button type="submit" class="btn-save">Zapisz ustawienia</button>
+      </form>
+
+      <hr />
+
+      <div class="suggestion-box" id="suggestion-box">
+        <h3>Sugestia algorytmu</h3>
+        <p id="suggestion-text">Ładowanie…</p>
+        <div class="suggestion-actions">
+          <button id="btn-approve" class="btn-primary">Zatwierdź</button>
+          <select id="group-override">
+            <option value="">— zmień grupę —</option>
+          </select>
+          <button id="btn-override" class="btn-secondary">Zmień</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="/static/parent.js"></script>
+</body>
+</html>

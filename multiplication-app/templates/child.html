@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tabliczka mnożenia</title>
+  <link rel="stylesheet" href="/static/child.css" />
+</head>
+<body>
+  <!-- Confetti container -->
+  <div id="confetti-container" aria-hidden="true"></div>
+
+  <!-- Main card -->
+  <div id="app">
+
+    <!-- Start screen -->
+    <div id="screen-start" class="screen active">
+      <div class="card">
+        <div class="emoji">🌟</div>
+        <h1>Tabliczka mnożenia</h1>
+        <p>Gotowy na sesję?</p>
+        <button id="btn-start" class="btn-primary">Zacznij sesję</button>
+      </div>
+    </div>
+
+    <!-- Question screen -->
+    <div id="screen-question" class="screen">
+      <!-- Progress bar -->
+      <div class="progress-bar-wrap">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-label" id="progress-label">0 / 0</div>
+
+      <!-- Question card -->
+      <div class="card slide-in" id="question-card">
+        <div class="question" id="question-text">
+          <span id="q-a">6</span>
+          <span class="op">×</span>
+          <span id="q-b">7</span>
+          <span class="op">=</span>
+          <span class="q-mark">?</span>
+        </div>
+
+        <!-- Keyboard mode -->
+        <div id="mode-keyboard" class="answer-area hidden">
+          <input
+            id="input-answer"
+            type="number"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            min="4"
+            max="81"
+            autocomplete="off"
+            placeholder="…"
+          />
+          <button id="btn-submit" class="btn-primary">↵</button>
+        </div>
+
+        <!-- Tiles mode -->
+        <div id="mode-tiles" class="tile-grid hidden">
+          <button class="tile" data-val=""></button>
+          <button class="tile" data-val=""></button>
+          <button class="tile" data-val=""></button>
+          <button class="tile" data-val=""></button>
+        </div>
+
+        <!-- Feedback overlay -->
+        <div id="feedback" class="feedback hidden">
+          <span id="feedback-text"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Done screen -->
+    <div id="screen-done" class="screen">
+      <div class="card">
+        <div class="emoji" id="done-emoji">🎉</div>
+        <h1>Sesja skończona!</h1>
+        <p id="done-stats"></p>
+        <button id="btn-new-session" class="btn-primary">Nowa sesja</button>
+      </div>
+    </div>
+
+  </div><!-- #app -->
+
+  <script src="/static/child.js"></script>
+</body>
+</html>
