@@ -1,58 +1,52 @@
 """
-64 multiplication facts divided into 16 groups.
-fact_id format: "axb" e.g. "6x7"
-Range: ×2 to ×9 (×1 and ×10 excluded as trivial).
+Multiplication fact definitions — 16 groups of 4 cards each.
+fact_id format: "axb"  e.g. "6x7"
+Range: ×2 to ×9.
 """
 
-# Introduction order: A-groups first (originals before inverses), then B, C, D
-INTRODUCTION_ORDER = [
+# ---------------------------------------------------------------------------
+# RAW_GROUPS — canonical definition (tuples of (a, b))
+# ---------------------------------------------------------------------------
+RAW_GROUPS: dict[str, list[tuple[int, int]]] = {
+    # Faza 1: małe liczby
+    "A1": [(2, 3), (3, 4), (5, 6), (7, 8)],          # wyniki: 6, 12, 30, 56
+    "A2": [(3, 2), (4, 3), (6, 5), (8, 7)],          # odwrotności A1
+    "A3": [(2, 4), (3, 6), (5, 7), (9, 9)],          # wyniki: 8, 18, 35, 81
+    "A4": [(4, 2), (6, 3), (7, 5), (8, 8)],          # odwrotności A3 + kwadrat
+    # Faza 2: średnie, wprowadzenie ×8 i ×9
+    "B1": [(2, 6), (3, 7), (4, 8), (9, 5)],          # wyniki: 12, 21, 32, 45
+    "B2": [(6, 2), (7, 3), (8, 4), (5, 9)],          # odwrotności B1
+    "B3": [(2, 7), (4, 6), (5, 8), (6, 6)],          # wyniki: 14, 24, 40, 36
+    "B4": [(7, 2), (6, 4), (8, 5), (7, 7)],          # odwrotności B3 + kwadraty
+    # Faza 3: ×6, ×7, ×8, ×9 wzajemnie + kwadraty
+    "C1": [(2, 8), (3, 9), (6, 7), (5, 5)],          # wyniki: 16, 27, 42, 25
+    "C2": [(8, 2), (9, 3), (7, 6), (4, 4)],          # odwrotności C1 + kwadraty
+    "C3": [(2, 9), (4, 7), (6, 8), (3, 3)],          # wyniki: 18, 28, 48, 9
+    "C4": [(9, 2), (7, 4), (8, 6), (2, 2)],          # odwrotności C3 + kwadraty
+    # Faza 4: najtrudniejsze fakty
+    "D1": [(3, 8), (4, 9), (6, 9), (7, 9)],          # wyniki: 24, 36, 54, 63
+    "D2": [(8, 3), (9, 4), (9, 6), (9, 7)],          # odwrotności D1
+    "D3": [(3, 5), (4, 5), (2, 5), (8, 9)],          # wyniki: 15, 20, 10, 72
+    "D4": [(5, 3), (5, 4), (5, 2), (9, 8)],          # odwrotności D3
+}
+
+# Kolejność wprowadzania grup
+INTRODUCTION_ORDER: list[str] = [
     "A1", "A3", "A2", "A4",
     "B1", "B3", "B2", "B4",
     "C1", "C3", "C2", "C4",
     "D1", "D3", "D2", "D4",
 ]
 
-# Paired groups: each group's inverse partner
-GROUP_PAIRS = {
-    "A1": "A2", "A2": "A1",
-    "A3": "A4", "A4": "A3",
-    "B1": "B2", "B2": "B1",
-    "B3": "B4", "B4": "B3",
-    "C1": "C2", "C2": "C1",
-    "C3": "C4", "C4": "C3",
-    "D1": "D2", "D2": "D1",
-    "D3": "D4", "D4": "D3",
-}
-
-# Which group in each pair is introduced first (the "original")
-# Inverse groups require their pair to reach box ≥ 3 before introduction
-INVERSE_GROUPS = {"A2", "A4", "B2", "B4", "C2", "C4", "D2", "D4"}
-
-# Groups: each group contains exactly 4 fact_ids
-# Note: 5x8 appears in both B3 and D3, 8x5 in both B4 and D4 (spec includes both)
-GROUPS = {
-    "A1": ["2x3", "3x4", "5x6", "7x8"],
-    "A2": ["3x2", "4x3", "6x5", "8x7"],
-    "A3": ["2x4", "3x6", "5x7", "9x9"],
-    "A4": ["4x2", "6x3", "7x5", "8x8"],
-    "B1": ["2x6", "3x7", "4x8", "9x5"],
-    "B2": ["6x2", "7x3", "8x4", "5x9"],
-    "B3": ["2x7", "4x6", "5x8", "6x6"],
-    "B4": ["7x2", "6x4", "8x5", "7x7"],
-    "C1": ["2x8", "3x9", "6x7", "5x5"],
-    "C2": ["8x2", "9x3", "7x6", "4x4"],
-    "C3": ["2x9", "4x7", "6x8", "3x3"],
-    "C4": ["9x2", "7x4", "8x6", "2x2"],
-    "D1": ["3x8", "4x9", "6x9", "7x9"],
-    "D2": ["8x3", "9x4", "9x6", "9x7"],
-    "D3": ["3x5", "4x5", "5x8", "8x9"],
-    "D4": ["5x3", "5x4", "8x5", "9x8"],
+# Derived: group → list of fact_ids
+GROUPS: dict[str, list[str]] = {
+    g: [f"{a}x{b}" for a, b in pairs]
+    for g, pairs in RAW_GROUPS.items()
 }
 
 
-def _build_facts():
-    """Derive unique FACTS dict from group definitions."""
-    facts = {}
+def _build_facts() -> dict:
+    facts: dict = {}
     for group_facts in GROUPS.values():
         for fid in group_facts:
             if fid not in facts:
@@ -61,37 +55,9 @@ def _build_facts():
     return facts
 
 
-FACTS = _build_facts()
+FACTS: dict = _build_facts()
 
 
-def get_fact_group(fact_id):
-    """Return the primary group a fact belongs to (first in INTRODUCTION_ORDER)."""
-    for group_id in INTRODUCTION_ORDER:
-        if fact_id in GROUPS[group_id]:
-            return group_id
-    return None
-
-
-def init_leitner_data(active_groups=None):
-    """
-    Initialize Leitner card data for all facts.
-    active_groups: list of group IDs to mark as active (default: ['A1']).
-    """
-    if active_groups is None:
-        active_groups = ["A1"]
-
-    leitner = {}
-    for fact_id in FACTS:
-        leitner[fact_id] = {
-            "box": 0,
-            "next_review": None,
-            "active": False,
-            "history": [],
-        }
-
-    for group_id in active_groups:
-        for fact_id in GROUPS.get(group_id, []):
-            if fact_id in leitner:
-                leitner[fact_id]["active"] = True
-
-    return leitner
+def init_leitner_data() -> dict:
+    """Return initial Leitner state for all facts (all in box 0)."""
+    return {fid: {"box": 0, "history": []} for fid in FACTS}

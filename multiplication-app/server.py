@@ -1,91 +1,81 @@
 """
-Flask server — routes, session management, auto-save, shutdown handling.
+Flask server — routes, session management, save on shutdown.
 Run: python server.py
 """
 import json
+import logging
 import os
 import signal
 import sys
 import time
-from datetime import date, datetime
+from datetime import datetime
 
 from flask import Flask, jsonify, render_template, request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BASE_DIR)
 
-from data.facts import (
-    FACTS,
-    GROUPS,
-    INTRODUCTION_ORDER,
-    init_leitner_data,
-)
+from data.facts import FACTS, GROUPS, INTRODUCTION_ORDER, init_leitner_data
 from engine.leitner import process_answer
-from engine.session_builder import build_session_queue, generate_distractors
-from engine.group_selector import suggest_next_group, activate_group
+from engine.session_builder import (
+    BOX_SEQUENCE,
+    build_session_queue,
+    on_session_finished,
+    generate_distractors,
+)
+
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S"
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-
 DATA_FILE = os.path.join(BASE_DIR, "data", "session_data.json")
 
-# ── In-memory state ─────────────────────────────────────────────────────────
-_state: dict = {}
+ST: dict = {}
 _current_session: dict | None = None
-_answers_since_save: int = 0
-# ────────────────────────────────────────────────────────────────────────────
 
 
 def _default_state() -> dict:
-    groups_state = {
-        g: {"status": "active" if g == "A1" else "pending"}
-        for g in INTRODUCTION_ORDER
-    }
     return {
-        "leitner": init_leitner_data(["A1"]),
-        "groups": groups_state,
-        "pending_sessions": [],
+        "leitner": init_leitner_data(),
+        "scheduler": {
+            "phase": "groups",
+            "current_group_idx": 0,
+            "consecutive_clean": 0,
+            "box_seq_idx": 0,
+            "current_batch": None,
+            "box_copies": {},
+        },
         "completed_sessions": [],
-        "settings": {
-            "answer_mode": "keyboard",
-            "session_length_min": 12,
-            "session_hard_limit_min": 20,
-            "new_cards_per_session": 2,
-            "autosave_every_n": 5,
-            "mastery_threshold_ms": 3000,
-        },
-        "stats": {
-            "total_sessions": 0,
-            "total_answers": 0,
-            "last_session": None,
-        },
+        "settings": {"answer_mode": "keyboard"},
+        "stats": {"total_sessions": 0, "total_answers": 0},
     }
 
 
 def load_state() -> None:
-    global _state
+    global ST
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as fh:
-            _state = json.load(fh)
-        # Ensure all current FACTS are present (handles data migrations)
+            ST = json.load(fh)
         for fid in FACTS:
-            if fid not in _state["leitner"]:
-                _state["leitner"][fid] = {
-                    "box": 0,
-                    "next_review": None,
-                    "active": False,
-                    "history": [],
-                }
+            if fid not in ST["leitner"]:
+                ST["leitner"][fid] = {"box": 0, "history": []}
+        if "scheduler" not in ST:
+            ST["scheduler"] = _default_state()["scheduler"]
+        logger.info("Stan wczytany z %s", DATA_FILE)
     else:
-        _state = _default_state()
+        ST = _default_state()
         save_state()
+        logger.info("Nowy stan zainicjalizowany.")
 
 
 def save_state() -> None:
     os.makedirs(os.path.dirname(DATA_FILE), exist_ok=True)
     tmp = DATA_FILE + ".tmp"
     with open(tmp, "w", encoding="utf-8") as fh:
-        json.dump(_state, fh, indent=2, ensure_ascii=False)
-    os.replace(tmp, DATA_FILE)  # atomic write
+        json.dump(ST, fh, indent=2, ensure_ascii=False)
+    os.replace(tmp, DATA_FILE)
 
 
 def _shutdown_handler(signum, frame) -> None:
@@ -97,9 +87,7 @@ signal.signal(signal.SIGTERM, _shutdown_handler)
 signal.signal(signal.SIGINT, _shutdown_handler)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Child endpoints
-# ═══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════ Child ═════════════════════════════════════════
 
 
 @app.route("/child/")
@@ -110,39 +98,23 @@ def child_index():
 @app.route("/child/next")
 def child_next():
     global _current_session
-
     if _current_session is None:
         _current_session = _create_session()
-
-    session = _current_session
-
-    # Hard time limit check
-    elapsed_min = (time.time() - session["start_time"]) / 60
-    hard_limit = _state["settings"].get("session_hard_limit_min", 20)
-    if elapsed_min >= hard_limit and not session.get("done"):
-        session["done"] = True
-        _finalize_session()
-
-    if session.get("done") or session["current_idx"] >= len(session["queue"]):
+    s = _current_session
+    if s.get("done") or s["current_idx"] >= len(s["queue"]):
         return jsonify({"done": True})
-
-    fact_id = session["queue"][session["current_idx"]]
+    fact_id = s["queue"][s["current_idx"]]
     fact = FACTS[fact_id]
-    mode = _state["settings"]["answer_mode"]
-
+    mode = ST["settings"]["answer_mode"]
     payload: dict = {
         "done": False,
         "fact_id": fact_id,
         "a": fact["a"],
         "b": fact["b"],
         "mode": mode,
-        "progress": {
-            "done": session["current_idx"],
-            "total": len(session["queue"]),
-        },
-        "time_elapsed_s": int(time.time() - session["start_time"]),
+        "progress": {"done": s["current_idx"], "total": len(s["queue"])},
+        "time_elapsed_s": int(time.time() - s["start_time"]),
     }
-
     if mode == "tiles":
         import random
 
@@ -150,55 +122,43 @@ def child_next():
         options = distractors + [fact["result"]]
         random.shuffle(options)
         payload["options"] = options
-
     return jsonify(payload)
 
 
 @app.route("/child/answer", methods=["POST"])
 def child_answer():
-    global _current_session, _answers_since_save
-
+    global _current_session
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "No JSON body"}), 400
-
     fact_id = data.get("fact_id", "")
     if fact_id not in FACTS:
         return jsonify({"error": "Invalid fact_id"}), 400
-
     try:
         answer = int(data["answer"])
         response_time_ms = int(data["response_time_ms"])
     except (KeyError, TypeError, ValueError):
         return jsonify({"error": "Invalid answer or response_time_ms"}), 400
-
     correct_answer = FACTS[fact_id]["result"]
     correct = answer == correct_answer
-
-    result = process_answer(_state["leitner"], fact_id, correct, response_time_ms)
-
+    result = process_answer(ST["leitner"], fact_id, correct, response_time_ms)
+    ST["stats"]["total_answers"] = ST["stats"].get("total_answers", 0) + 1
     streak = 0
     if _current_session:
-        _current_session["answers_given"] += 1
-        _current_session["total_response_ms"] += response_time_ms
+        s = _current_session
+        s["answers_given"] += 1
+        s["total_response_ms"] += response_time_ms
         if correct:
-            _current_session["correct_count"] += 1
-            _current_session["correct_streak"] += 1
+            s["correct_count"] += 1
+            s["correct_streak"] += 1
         else:
-            _current_session["correct_streak"] = 0
-        _current_session["current_idx"] += 1
-        streak = _current_session["correct_streak"]
-
-        if _current_session["current_idx"] >= len(_current_session["queue"]):
-            _current_session["done"] = True
+            s["correct_streak"] = 0
+            s["had_error"] = True
+        s["current_idx"] += 1
+        streak = s["correct_streak"]
+        if s["current_idx"] >= len(s["queue"]):
+            s["done"] = True
             _finalize_session()
-
-    _state["stats"]["total_answers"] += 1
-    _answers_since_save += 1
-    if _answers_since_save >= _state["settings"].get("autosave_every_n", 5):
-        save_state()
-        _answers_since_save = 0
-
     return jsonify(
         {
             "correct": correct,
@@ -234,9 +194,7 @@ def child_new_session():
     return jsonify({"ok": True, "queue_length": len(_current_session["queue"])})
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Parent endpoints
-# ═══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════ Parent ════════════════════════════════════════
 
 
 @app.route("/parent/")
@@ -246,36 +204,25 @@ def parent_index():
 
 @app.route("/parent/stats")
 def parent_stats():
-    leitner = _state["leitner"]
-
-    # Full 10×10 grid (1–10), inactive/outside range marked
+    leitner = ST["leitner"]
     grid = {}
     for a in range(1, 11):
         for b in range(1, 11):
             fid = f"{a}x{b}"
             card = leitner.get(fid)
-            if card:
-                grid[fid] = {"box": card["box"], "active": card["active"]}
-            else:
-                grid[fid] = {"box": -1, "active": False}  # ×1 / ×10 trivial
-
-    # Box distribution counts
-    box_counts = {str(i): 0 for i in range(6)}
-    box_next: dict[str, str | None] = {}
-    today = date.today().isoformat()
-    for card in leitner.values():
+            grid[fid] = {"box": card["box"] if card else -1}
+    box_cards: dict[str, list] = {str(i): [] for i in range(6)}
+    for fid, card in leitner.items():
         b = str(card["box"])
-        box_counts[b] = box_counts.get(b, 0) + 1
-
-    for i in range(1, 6):
-        dates = [
-            c["next_review"]
-            for c in leitner.values()
-            if c["box"] == i and c["active"] and c["next_review"]
-        ]
-        box_next[str(i)] = min(dates) if dates else None
-
-    # Top-5 difficult facts (most errors)
+        f = FACTS.get(fid, {})
+        box_cards[b].append(
+            {
+                "fact_id": fid,
+                "a": f.get("a"),
+                "b": f.get("b"),
+                "result": f.get("result"),
+            }
+        )
     difficult = []
     for fid, card in leitner.items():
         errors = sum(1 for h in card["history"] if not h["correct"])
@@ -292,17 +239,33 @@ def parent_stats():
                 }
             )
     difficult.sort(key=lambda x: -x["errors"])
-
+    sched = ST["scheduler"]
+    phase = sched.get("phase", "groups")
+    if phase == "groups":
+        idx = sched.get("current_group_idx", 0)
+        phase_info = {
+            "phase": "groups",
+            "current_group": (
+                INTRODUCTION_ORDER[idx] if idx < len(INTRODUCTION_ORDER) else None
+            ),
+            "consecutive_clean": sched.get("consecutive_clean", 0),
+            "progress": f"{idx}/{len(INTRODUCTION_ORDER)}",
+        }
+    else:
+        seq_idx = sched.get("box_seq_idx", 0) % len(BOX_SEQUENCE)
+        phase_info = {
+            "phase": "leitner",
+            "current_box": BOX_SEQUENCE[seq_idx],
+            "consecutive_clean": sched.get("consecutive_clean", 0),
+        }
     return jsonify(
         {
             "grid": grid,
-            "box_counts": box_counts,
-            "box_next": box_next,
-            "completed_sessions": _state["completed_sessions"][-30:],
+            "box_cards": box_cards,
+            "completed_sessions": ST["completed_sessions"][-30:],
             "difficult_facts": difficult[:5],
-            "groups": _state["groups"],
-            "suggested_group": suggest_next_group(_state),
-            "stats": _state["stats"],
+            "phase_info": phase_info,
+            "stats": ST["stats"],
         }
     )
 
@@ -310,46 +273,17 @@ def parent_stats():
 @app.route("/parent/settings", methods=["GET", "POST"])
 def parent_settings():
     if request.method == "GET":
-        return jsonify(_state["settings"])
-
+        return jsonify(ST["settings"])
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "No JSON body"}), 400
-
-    allowed = {
-        "answer_mode",
-        "session_length_min",
-        "session_hard_limit_min",
-        "new_cards_per_session",
-        "autosave_every_n",
-        "mastery_threshold_ms",
-    }
-    for key, value in data.items():
-        if key in allowed:
-            _state["settings"][key] = value
-
+    if "answer_mode" in data and data["answer_mode"] in ("keyboard", "tiles"):
+        ST["settings"]["answer_mode"] = data["answer_mode"]
     save_state()
-    return jsonify({"ok": True, "settings": _state["settings"]})
+    return jsonify({"ok": True, "settings": ST["settings"]})
 
 
-@app.route("/parent/override-group", methods=["POST"])
-def parent_override_group():
-    data = request.get_json(silent=True)
-    if not data:
-        return jsonify({"error": "No JSON body"}), 400
-
-    group_id = data.get("group_id", "")
-    if group_id not in GROUPS:
-        return jsonify({"error": "Unknown group_id"}), 400
-
-    activate_group(_state, group_id)
-    save_state()
-    return jsonify({"ok": True})
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# System endpoints
-# ═══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════ System ════════════════════════════════════════
 
 
 @app.route("/system/save", methods=["POST"])
@@ -358,20 +292,13 @@ def system_save():
     return jsonify({"ok": True})
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Internal helpers
-# ═══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════ Helpers ═══════════════════════════════════════
 
 
 def _create_session() -> dict:
-    active_groups = [
-        g for g, info in _state["groups"].items() if info["status"] == "active"
-    ]
-    queue = build_session_queue(
-        _state["leitner"], FACTS, GROUPS, active_groups, _state["settings"]
-    )
+    queue = build_session_queue(ST["leitner"], ST["scheduler"])
+    logger.info("Nowa sesja | Kolejka (%d kart): %s", len(queue), queue)
     return {
-        "id": f"s_{date.today().strftime('%Y%m%d')}_{int(time.time())}",
         "queue": queue,
         "current_idx": 0,
         "start_time": time.time(),
@@ -379,6 +306,7 @@ def _create_session() -> dict:
         "correct_count": 0,
         "correct_streak": 0,
         "total_response_ms": 0,
+        "had_error": False,
         "done": False,
     }
 
@@ -390,12 +318,10 @@ def _finalize_session() -> None:
         return
     answers = s["answers_given"]
     correct = s["correct_count"]
-    total_ms = s["total_response_ms"]
-    avg_ms = total_ms // answers if answers > 0 else 0
-
-    _state["completed_sessions"].append(
+    avg_ms = s["total_response_ms"] // answers if answers > 0 else 0
+    all_correct = not s["had_error"]
+    ST["completed_sessions"].append(
         {
-            "id": s["id"],
             "completed_at": datetime.now().isoformat(),
             "answers": answers,
             "correct": correct,
@@ -403,12 +329,14 @@ def _finalize_session() -> None:
             "avg_response_ms": avg_ms,
         }
     )
-    _state["stats"]["total_sessions"] += 1
-    _state["stats"]["last_session"] = date.today().isoformat()
+    ST["stats"]["total_sessions"] = ST["stats"].get("total_sessions", 0) + 1
+    status = "BEZ BLEDOW" if all_correct else f"ERRORS ({answers - correct})"
+    logger.info("Sesja zakonczona | %s | %d/%d", status, correct, answers)
+    on_session_finished(ST["scheduler"], ST["leitner"], all_correct)
     save_state()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     load_state()

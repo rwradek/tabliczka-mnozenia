@@ -39,8 +39,9 @@
     <!-- ── TAB 2: Leitner boxes ── -->
     <section id="tab-boxes" class="tab-content">
       <h2>Pudełka Leitnera</h2>
-      <div id="boxes-wrap" class="boxes-row">
-        <!-- Populated by JS -->
+      <p id="phase-info-label" class="phase-label"></p>
+      <div id="boxes-wrap">
+        <!-- Populated by JS: one card per box showing list of facts -->
       </div>
     </section>
 
@@ -72,45 +73,15 @@
       <h2>Konfiguracja</h2>
 
       <form id="settings-form" class="settings-grid">
-
         <label>Tryb odpowiedzi</label>
         <div class="radio-group">
           <label><input type="radio" name="answer_mode" value="keyboard" /> Klawiatura</label>
           <label><input type="radio" name="answer_mode" value="tiles"    /> Kafelki</label>
         </div>
 
-        <label for="cfg-session-len">Długość sesji (min)</label>
-        <input id="cfg-session-len" name="session_length_min" type="number" min="5" max="30" />
-
-        <label for="cfg-hard-limit">Twardy limit (min)</label>
-        <input id="cfg-hard-limit" name="session_hard_limit_min" type="number" min="10" max="60" />
-
-        <label for="cfg-new-cards">Nowe karty / sesja</label>
-        <input id="cfg-new-cards" name="new_cards_per_session" type="number" min="1" max="5" />
-
-        <label for="cfg-autosave">Autosave co N odpowiedzi</label>
-        <input id="cfg-autosave" name="autosave_every_n" type="number" min="1" max="20" />
-
-        <label for="cfg-mastery">Próg opanowania (ms)</label>
-        <input id="cfg-mastery" name="mastery_threshold_ms" type="number" min="1000" max="8000" step="100" />
-
         <div></div>
-        <button type="submit" class="btn-save">Zapisz ustawienia</button>
+        <button type="submit" class="btn-save">Zapisz</button>
       </form>
-
-      <hr />
-
-      <div class="suggestion-box" id="suggestion-box">
-        <h3>Sugestia algorytmu</h3>
-        <p id="suggestion-text">Ładowanie…</p>
-        <div class="suggestion-actions">
-          <button id="btn-approve" class="btn-primary">Zatwierdź</button>
-          <select id="group-override">
-            <option value="">— zmień grupę —</option>
-          </select>
-          <button id="btn-override" class="btn-secondary">Zmień</button>
-        </div>
-      </div>
     </section>
 
   </main>
